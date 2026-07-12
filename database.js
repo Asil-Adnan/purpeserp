@@ -87,30 +87,11 @@ const STANDARD_THICKNESSES = [4, 5, 6, 8, 10]; // in inches
 // Mock Orders (Cleared)
 const MOCK_ORDERS = [];
 
+
+
 class PurpesDB {
   constructor() {
     this.init();
-    this.initCloudSync();
-  }
-
-  init() {
-    if (!localStorage.getItem(CATALOG_KEY)) {
-      localStorage.setItem(CATALOG_KEY, JSON.stringify(DEFAULT_CATALOG));
-    }
-    if (!localStorage.getItem(ORDERS_KEY)) {
-      localStorage.setItem(ORDERS_KEY, JSON.stringify(MOCK_ORDERS));
-    } else {
-      // Cleanup legacy sample orders from local storage
-      let orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || [];
-      const sampleIds = ['ORD-2026-0001', 'ORD-2026-0002', 'ORD-2026-0003'];
-      const filtered = orders.filter(o => !sampleIds.includes(o.id));
-      if (filtered.length !== orders.length) {
-        localStorage.setItem(ORDERS_KEY, JSON.stringify(filtered));
-      }
-    }
-    if (!localStorage.getItem(USERS_KEY)) {
-      localStorage.setItem(USERS_KEY, JSON.stringify(DEFAULT_USERS));
-    } else {
     this.initCloudSync();
   }
 
