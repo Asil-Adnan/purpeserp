@@ -90,6 +90,28 @@ const MOCK_ORDERS = [];
 class PurpesDB {
   constructor() {
     this.init();
+    this.initCloudSync();
+  }
+
+  init() {
+    if (!localStorage.getItem(CATALOG_KEY)) {
+      localStorage.setItem(CATALOG_KEY, JSON.stringify(DEFAULT_CATALOG));
+    }
+    if (!localStorage.getItem(ORDERS_KEY)) {
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(MOCK_ORDERS));
+    } else {
+      // Cleanup legacy sample orders from local storage
+      let orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || [];
+      const sampleIds = ['ORD-2026-0001', 'ORD-2026-0002', 'ORD-2026-0003'];
+      const filtered = orders.filter(o => !sampleIds.includes(o.id));
+      if (filtered.length !== orders.length) {
+        localStorage.setItem(ORDERS_KEY, JSON.stringify(filtered));
+      }
+    }
+    if (!localStorage.getItem(USERS_KEY)) {
+      localStorage.setItem(USERS_KEY, JSON.stringify(DEFAULT_USERS));
+    } else {
+    this.initCloudSync();
   }
 
   init() {
@@ -116,6 +138,7 @@ class PurpesDB {
       if (adminUser && adminUser.password === '123') {
         adminUser.password = 'Diwani@2026';
         localStorage.setItem(USERS_KEY, JSON.stringify(users));
+        this.pushToCloud(USERS_KEY, users);
       }
     }
   }
@@ -152,63 +175,6 @@ class PurpesDB {
       users[index].username = newUsername;
       users[index].password = newPassword;
       localStorage.setItem(USERS_KEY, JSON.stringify(users));
-      
-      // Update session if it's the current user
-      const currentUser = this.getCurrentUser();
-      if (currentUser && currentUser.username === oldUsername) {
-        currentUser.username = newUsername;
-        currentUser.password = newPassword;
-        sessionStorage.setItem('current_user', JSON.stringify(currentUser));
-      }
-      return true;
-    }
-    return false;
-  }
-
-  // Catalog Methods
-  getCatalog() {
-    return JSON.parse(localStorage.getItem(CATALOG_KEY));
-  }
-
-  getModel(id) {
-    return this.getCatalog().find(m => m.id === id);
-  }
-
-  // Orders Methods
-  getOrders() {
-    return JSON.parse(localStorage.getItem(ORDERS_KEY)) || [];
-  }
-
-  getOrder(id) {
-    return this.getOrders().find(o => o.id === id);
-  }
-
-  saveOrders(orders) {
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-  }
-
-  createOrder(orderData) {
-    const orders = this.getOrders();
-    let newId = '';
-    
-    if (orderData.shed) {
-      // Use shed name prefix for order ID
-      const countersJson = localStorage.getItem(SLIP_COUNTERS_KEY);
-      let counters = {};
-      if (countersJson) {
-        try { counters = JSON.parse(countersJson); } catch(e) {}
-      }
-      if (!counters[orderData.shed]) {
-        counters[orderData.shed] = 1;
-      } else {
-        counters[orderData.shed]++;
-      }
-      localStorage.setItem(SLIP_COUNTERS_KEY, JSON.stringify(counters));
-      newId = `${orderData.shed}-${counters[orderData.shed]}`;
-    } else {
-      const prefix = 'ORD-2026-';
-      const nextNum = String(orders.length + 1).padStart(4, '0');
-      newId = prefix + nextNum;
     }
     const currentUser = this.getCurrentUser();
     
@@ -356,6 +322,68 @@ class PurpesDB {
       return Math.round(customPrice);
     }
   }
+
+  // --- Vercel KV Cloud Sync Logic ---
+  initCloudSync() {
+    this.syncFromCloud();
+  }
+
+  async syncFromCloud() {
+    try {
+      const response = await fetch('/api/sync');
+      if (!response.ok) {
+        console.warn('Could not reach Vercel API for sync. Using local data only.');
+        return;
+      }
+      
+      const data = await response.json();
+      
+      if (data.users && data.users.length > 0) {
+        localStorage.setItem('purpes_erp_users', JSON.stringify(data.users));
+      } else {
+        // Init cloud
+        this.pushToCloud('purpes_erp_users', this.getUsers());
+      }
+
+      if (data.catalog && data.catalog.length > 0) {
+        localStorage.setItem('purpes_erp_catalog', JSON.stringify(data.catalog));
+      } else {
+        this.pushToCloud('purpes_erp_catalog', this.getCatalog());
+      }
+
+      if (data.orders && data.orders.length > 0) {
+        localStorage.setItem('purpes_erp_orders', JSON.stringify(data.orders));
+      } else {
+        this.pushToCloud('purpes_erp_orders', this.getOrders());
+      }
+
+      if (data.counters) {
+        localStorage.setItem('purpes_erp_slip_counters', JSON.stringify(data.counters));
+      }
+      
+      console.log("Cloud sync complete!");
+      // Refresh UI if app is loaded
+      if (window.app && typeof window.app.refreshDashboard === 'function') {
+        window.app.refreshDashboard();
+        window.app.renderOrdersList();
+      }
+    } catch (e) {
+      console.error("Cloud Sync Error:", e);
+    }
+  }
+
+  async pushToCloud(key, data) {
+    try {
+      await fetch('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, data })
+      });
+    } catch (e) {
+      console.error("KV Push Error:", e);
+    }
+  }
+
 }
 
 // Export database class globally for index.html/app.js to use
