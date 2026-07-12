@@ -1,4 +1,5 @@
-const { kv } = require('@vercel/kv');
+const { Redis } = require('@upstash/redis');
+const kv = Redis.fromEnv();
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
